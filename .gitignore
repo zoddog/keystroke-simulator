@@ -1,0 +1,9 @@
+*.AppImage
+KeystrokeSimulator.AppDir/
+appimagetool
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.vscode/
+*.log
