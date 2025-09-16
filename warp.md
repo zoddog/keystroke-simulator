@@ -29,3 +29,10 @@ A simple GUI application for simulating keystrokes on Ubuntu Wayland systems. De
 
 ## Repository
 https://github.com/zoddog/keystroke-simulator
+
+## Changelog
+- v0.1.0
+  - Initial AppImage release
+  - Types exactly the provided input text (no extra tricks)
+  - HU/US language toggle in UI
+  - Note: prepend 10–20 spaces for Dockge terminal reliability

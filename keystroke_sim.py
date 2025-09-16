@@ -8,10 +8,12 @@ import time
 import sys
 import re
 
+APP_VERSION = "v0.1.0"
+
 class KeystrokeSimulator:
     def __init__(self, root):
         self.root = root
-        self.root.title("Keystroke Simulator")
+        self.root.title(f"Keystroke Simulator {APP_VERSION}")
         self.root.geometry("600x400")
         self.root.resizable(True, True)
         
