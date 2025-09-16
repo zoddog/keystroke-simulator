@@ -6,6 +6,7 @@ import subprocess
 import threading
 import time
 import sys
+import re
 
 class KeystrokeSimulator:
     def __init__(self, root):
@@ -18,6 +19,9 @@ class KeystrokeSimulator:
         self.countdown_active = False
         self.countdown_value = 5
         self.original_layout = None
+        self.original_sources = None
+        self.original_current_index = None
+        self.language_var = tk.StringVar(value="HU")
         
         self.setup_ui()
         
@@ -30,11 +34,18 @@ class KeystrokeSimulator:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(1, weight=1)
+        main_frame.rowconfigure(2, weight=1)
+        
+        # Language selection frame
+        lang_frame = ttk.LabelFrame(main_frame, text="Input Language", padding="5")
+        lang_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        ttk.Radiobutton(lang_frame, text="Hungarian (HU)", variable=self.language_var, value="HU").pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Radiobutton(lang_frame, text="US English (US)", variable=self.language_var, value="US").pack(side=tk.LEFT)
         
         # Text input label
         ttk.Label(main_frame, text="Enter text to simulate (max 1000 characters):").grid(
-            row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 5)
+            row=1, column=0, columnspan=2, sticky=tk.W, pady=(0, 5)
         )
         
         # Text input area
@@ -44,7 +55,7 @@ class KeystrokeSimulator:
             width=70,
             wrap=tk.WORD
         )
-        self.text_area.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        self.text_area.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
         
         # Bind text change event for character limit
         self.text_area.bind('<KeyRelease>', self.on_text_change)
@@ -52,11 +63,11 @@ class KeystrokeSimulator:
         
         # Character counter
         self.char_count_label = ttk.Label(main_frame, text="Characters: 0/1000")
-        self.char_count_label.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(0, 10))
+        self.char_count_label.grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(0, 10))
         
         # Button frame
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E))
+        button_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E))
         button_frame.columnconfigure(0, weight=1)
         
         # Start button
@@ -73,7 +84,7 @@ class KeystrokeSimulator:
         
         # Status label
         self.status_label = ttk.Label(main_frame, text="Ready")
-        self.status_label.grid(row=4, column=0, columnspan=2, sticky=tk.W)
+        self.status_label.grid(row=5, column=0, columnspan=2, sticky=tk.W)
         
     def on_text_change(self, event=None):
         # Get current text and limit to 1000 characters
@@ -99,7 +110,8 @@ class KeystrokeSimulator:
             self.char_count_label.config(foreground="black")
     
     def start_simulation(self):
-        text_to_type = self.text_area.get("1.0", tk.END).strip()
+        # Get the text exactly as provided (no modifications), excluding Tk's trailing newline
+        text_to_type = self.text_area.get("1.0", "end-1c")
         
         if not text_to_type:
             messagebox.showwarning("Warning", "Please enter some text to simulate.")
@@ -154,70 +166,242 @@ class KeystrokeSimulator:
         self.root.after(3000, lambda: self.status_label.config(text="Ready"))
     
     def get_current_keyboard_layout(self):
-        """Get the current keyboard layout"""
+        """Get the current keyboard layout index as string (e.g. 'uint32 0')"""
         try:
-            # Try to get current layout using gsettings (GNOME/Ubuntu)
             result = subprocess.run(
                 ['gsettings', 'get', 'org.gnome.desktop.input-sources', 'current'],
                 capture_output=True, text=True
             )
             if result.returncode == 0:
                 return result.stdout.strip()
-        except:
+        except Exception:
             pass
         return None
-    
-    def set_keyboard_layout(self, layout_index=None):
-        """Set keyboard layout. If layout_index is None, sets to US layout (usually index 0)"""
+
+    def get_input_sources(self):
+        """Get the current input sources string, e.g. "[('xkb', 'hu'), ('xkb', 'us')]"""
         try:
-            if layout_index is None:
-                # Try to find and set US layout
-                # First, let's get available layouts
-                result = subprocess.run(
-                    ['gsettings', 'get', 'org.gnome.desktop.input-sources', 'sources'],
-                    capture_output=True, text=True
-                )
-                if result.returncode == 0:
-                    sources = result.stdout.strip()
-                    # Look for US layout in the sources
-                    if "'xkb', 'us'" in sources or "'xkb', 'us+" in sources:
-                        # Set to first layout (assuming US is configured)
-                        subprocess.run(
-                            ['gsettings', 'set', 'org.gnome.desktop.input-sources', 'current', '0'],
-                            capture_output=True
-                        )
-            else:
-                # Restore original layout
-                subprocess.run(
-                    ['gsettings', 'set', 'org.gnome.desktop.input-sources', 'current', str(layout_index)],
-                    capture_output=True
-                )
+            result = subprocess.run(
+                ['gsettings', 'get', 'org.gnome.desktop.input-sources', 'sources'],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except Exception:
+            pass
+        return None
+
+    def set_input_sources(self, sources_str: str):
+        try:
+            subprocess.run(
+                ['gsettings', 'set', 'org.gnome.desktop.input-sources', 'sources', sources_str],
+                capture_output=True, text=True
+            )
         except Exception as e:
-            print(f"Warning: Could not change keyboard layout: {e}")
+            print(f"Warning: Could not set input sources: {e}")
+
+    def set_current_layout_index(self, index: int):
+        try:
+            subprocess.run(
+                ['gsettings', 'set', 'org.gnome.desktop.input-sources', 'current', str(index)],
+                capture_output=True, text=True
+            )
+        except Exception as e:
+            print(f"Warning: Could not set current layout index: {e}")
+
+    def ensure_us_layout(self):
+        """Ensure that US layout is available and active. Save originals for restoration.
+        Returns the index of the US layout after adjustment.
+        """
+        self.original_sources = self.get_input_sources()
+        current_s = self.get_current_keyboard_layout()
+        try:
+            self.original_current_index = int(current_s.replace('uint32 ', '')) if current_s else None
+        except Exception:
+            self.original_current_index = None
+
+        sources = self.original_sources or "[]"
+        # Parse layout codes
+        layouts = re.findall(r"\('xkb', '([^']+)'\)", sources)
+        if not layouts:
+            layouts = []
+
+        if 'us' not in layouts:
+            # Prepend 'us' to sources
+            new_layouts = ['us'] + layouts
+            inside = ", ".join(["('xkb', '%s')" % l for l in new_layouts])
+            new_sources = f"[{inside}]"
+            self.set_input_sources(new_sources)
+            us_index = 0
+        else:
+            us_index = layouts.index('us')
+
+        # Activate US layout
+        self.set_current_layout_index(us_index)
+        return us_index
+
+    def restore_original_layout(self):
+        try:
+            if self.original_sources is not None:
+                self.set_input_sources(self.original_sources)
+            if self.original_current_index is not None:
+                self.set_current_layout_index(self.original_current_index)
+        except Exception as e:
+            print(f"Warning: Could not restore original layout: {e}")
+    
+    def convert_hungarian_to_us(self, text):
+        """Convert Hungarian keyboard input to US keyboard mapping"""
+        # Hungarian to US character mapping
+        hu_to_us_map = {
+            # Numbers row special characters
+            '§': '`',     # section sign to backtick
+            '1': '1',
+            '2': '2',
+            '3': '3',
+            '4': '4',
+            '5': '5',
+            '6': '6',
+            '7': '7',
+            '8': '8',
+            '9': '9',
+            '0': '0',
+            'ö': '-',     # ö to minus
+            'ü': '=',     # ü to equals
+            'Ö': '_',     # Ö to underscore
+            'Ü': '+',     # Ü to plus
+            # Additional underscore mappings  
+            '_': '_',     # underscore to underscore (direct)
+            'ß': '_',     # German ß sometimes maps to underscore
+            
+            # Shift+number combinations on Hungarian keyboard
+            '\'': '!',    # Shift+1 on HU keyboard
+            '"': '@',     # Shift+2 on HU keyboard  
+            '+': '#',     # Shift+3 on HU keyboard
+            '!': '$',     # Shift+4 on HU keyboard
+            '%': '%',     # Shift+5 on HU keyboard
+            '/': '^',     # Shift+6 on HU keyboard
+            '=': '&',     # Shift+7 on HU keyboard
+            '(': '*',     # Shift+8 on HU keyboard
+            ')': '(',     # Shift+9 on HU keyboard
+            # But we also need direct mappings
+            '@': '@',     # at symbol direct
+            '#': '#',     # hash direct
+            
+            # Top row
+            'q': 'q',
+            'w': 'w',
+            'e': 'e',
+            'r': 'r',
+            't': 't',
+            'z': 'y',     # Hungarian z to US y
+            'u': 'u',
+            'i': 'i',
+            'o': 'o',
+            'p': 'p',
+            'ő': '[',     # ő to left bracket
+            'ú': ']',     # ú to right bracket
+            'Ő': '{',     # Ő to left brace
+            'Ú': '}',     # Ú to right brace
+            
+            # Middle row
+            'a': 'a',
+            's': 's',
+            'd': 'd',
+            'f': 'f',
+            'g': 'g',
+            'h': 'h',
+            'j': 'j',
+            'k': 'k',
+            'l': 'l',
+            'é': ';',     # é to semicolon
+            'á': "'",    # á to apostrophe
+            'É': ':',     # É to colon
+            'Á': '"',     # Á to quotation mark
+            # Additional quote mappings
+            '"': '"',     # double quote direct
+            "'": "'",    # single quote direct
+            
+            # Bottom row
+            'y': 'y',     # keep y as y (we ensure US layout separately)
+            'x': 'x',
+            'c': 'c',
+            'v': 'v',
+            'b': 'b',
+            'n': 'n',
+            'm': 'm',
+            'z': 'z',     # keep z as z (no swap)
+            ',': ',',
+            '.': '.',
+            '-': '-',     # dash to dash (keep direct)
+            '/': '/',     # slash direct
+            '?': '?',
+            
+            # Special characters that need shift
+            '!': '!',     # exclamation
+            '@': '@',     # at symbol
+            '#': '#',     # hash
+            '$': '$',     # dollar
+            '%': '%',     # percent
+            '^': '^',     # caret
+            '&': '&',     # ampersand
+            '*': '*',     # asterisk
+            '(': '(',     # left parenthesis
+            ')': ')',     # right parenthesis
+            
+            # Common punctuation
+            ' ': ' ',     # space
+            '\t': '\t',   # tab
+            '\n': '\n',   # newline
+            '\r': '\r',   # carriage return
+            
+            # Pipe and backslash
+            'í': '\\',    # í to backslash
+            'Í': '|',     # Í to pipe
+            '|': '|',     # pipe direct
+            '\\': '\\',   # backslash direct
+            
+            # Additional common mappings that might be missed
+            'ű': '[',     # ű to left bracket (alternative)
+            'Ű': '{',     # Ű to left brace (alternative)
+            
+            # AltGr combinations that produce special characters on Hungarian keyboard
+            '~': '~',     # tilde
+            '`': '`',     # backtick
+            '^': '^',     # caret
+        }
+        
+        if self.language_var.get() == "HU":
+            # Convert Hungarian input to US mapping
+            converted = ""
+            for char in text:
+                converted += hu_to_us_map.get(char, char)
+            return converted
+        else:
+            # US input, no conversion needed
+            return text
     
     def simulate_keystrokes(self, text):
         original_layout_index = None
         try:
-            # Save current keyboard layout
-            current_layout = self.get_current_keyboard_layout()
-            if current_layout:
-                try:
-                    original_layout_index = int(current_layout.replace('uint32 ', ''))
-                except:
-                    original_layout_index = None
-            
-            # Switch to US keyboard layout
+            # Ensure US keyboard layout is active; save originals for restoration
             self.root.after(0, lambda: self.status_label.config(text="Switching to US keyboard layout..."))
-            self.set_keyboard_layout(None)  # Set to US layout
+            self.ensure_us_layout()
             time.sleep(0.5)  # Give system time to switch
+            
+            # Convert text based on selected language
+            converted_text = self.convert_hungarian_to_us(text)
             
             # Use ydotool to simulate typing
             # We need to run with elevated privileges for ydotool to work properly on Wayland
-            # Use pkexec instead of sudo for GUI applications
-            cmd = ['pkexec', 'ydotool', 'type', '--delay', '10', text]
+            # Use pkexec with a small delay after auth so focus can return to the target window
+            # Pass text via env var to avoid shell-quoting issues
+            cmd = [
+                'pkexec', 'env', f'TYPETEXT={converted_text}',
+                'sh', '-c', 'sleep 3; ydotool type --delay 10 -- "$TYPETEXT"'
+            ]
             
             # Run the command
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
             
             if result.returncode != 0:
                 raise Exception(f"ydotool failed: {result.stderr}")
@@ -227,11 +411,10 @@ class KeystrokeSimulator:
         except Exception as e:
             raise Exception(f"Failed to simulate keystrokes: {str(e)}")
         finally:
-            # Always restore original keyboard layout
-            if original_layout_index is not None:
-                self.root.after(0, lambda: self.status_label.config(text="Restoring original keyboard layout..."))
-                self.set_keyboard_layout(original_layout_index)
-                time.sleep(0.3)
+            # Always restore original keyboard layout and sources
+            self.root.after(0, lambda: self.status_label.config(text="Restoring original keyboard layout..."))
+            self.restore_original_layout()
+            time.sleep(0.3)
     
     def quit_app(self):
         if self.countdown_active:
